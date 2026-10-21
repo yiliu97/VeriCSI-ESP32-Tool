@@ -1,0 +1,37 @@
+#
+# VeriCSI-ESP32 - ESP32-S3 (Xtensa LX7 dual-core, AI instructions) overrides
+#
+# Verified board: ESP32-S3-DevKitC-1.
+# S3 has an on-chip USB-Serial-JTAG controller; recommended sink for high
+# packet rates.
+#
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# Dual core (default).
+# CONFIG_FREERTOS_UNICORE is unset.
+
+# Route stdout to USB-Serial-JTAG (preferred). The user can still switch to
+# UART via menuconfig if needed.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+CONFIG_SEND_CSI_TO_SERIAL=y
+CONFIG_SEND_CSI_TO_SD=n
+
+CONFIG_SHOULD_COLLECT_CSI=y
+
+#
+# Octal PSRAM.
+#
+# The DevKitC-1 N8R8 / N16R8 variants ship with 8 / 16 MB Octal SPI PSRAM.
+# These defaults ENABLE the PSRAM controller so heap_caps_malloc(
+# MALLOC_CAP_SPIRAM) returns valid memory; the CSI tool's PSRAM ring buffer
+# (CONFIG_ESP32_CSI_TOOL_PSRAM_RING_BUFFER) is still default-OFF and must be
+# explicitly opted into via menuconfig. On boards with a non-PSRAM S3 variant
+# (e.g. plain "S3" without R8 suffix), set CONFIG_SPIRAM=n in your local
+# sdkconfig and the tool falls back to the internal-RAM 64-item queue.
+#
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y

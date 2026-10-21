@@ -1,0 +1,22 @@
+#
+# VeriCSI-ESP32 - ESP32-C6 (RISC-V HP + LP, 2.4 GHz Wi-Fi 6) overrides
+#
+# Verified board: Diymore ESP32-C6-WROOM1 module (Amazon UK B0DBVM51MP).
+# C6 is the headline RISC-V Wi-Fi 6 chip for HE-LTF capture.
+#
+# Known caveat: espressif/esp-idf#14271 - LLTF data missing and HT-LTF
+# subcarrier order differs in HE acquisition mode. Handled in
+# _components/chip_aware_decoder.h and python_utils/lib/chip_aware_decoder.py.
+#
+
+CONFIG_IDF_TARGET="esp32c6"
+
+CONFIG_FREERTOS_UNICORE=y
+
+# On-chip USB-Serial-JTAG.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+CONFIG_SEND_CSI_TO_SERIAL=y
+CONFIG_SEND_CSI_TO_SD=n
+
+CONFIG_SHOULD_COLLECT_CSI=y

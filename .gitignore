@@ -1,0 +1,46 @@
+# ESP-IDF build artifacts (generated per-app sdkconfig stays out;
+# the shared sdkconfig/ defaults directory IS tracked)
+build/
+bchk*/
+rchk*/
+sinkchk*/
+cleanchk*/
+active_ap/sdkconfig
+active_sta/sdkconfig
+passive/sdkconfig
+sdkconfig.old
+sdkconfig.*.bak
+*.bak
+dependencies.lock
+managed_components/
+
+# Capture data and experiment output (never committed)
+data/
+*.csv
+!python_utils/lib/example_csi.csv
+*.npy
+csi_live_pending*
+
+# Logs and tool output
+*.log
+buildout.txt
+setout.txt
+monitor.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.orig

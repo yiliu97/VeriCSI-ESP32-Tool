@@ -1,0 +1,14 @@
+# Python utilities
+#
+# Pinned to the lowest versions supported on Python 3.10+. Bump as needed when
+# the host-side analysis scripts require newer features.
+
+numpy>=1.24
+matplotlib>=3.7
+pandas>=2.0
+scipy>=1.10
+
+# CSV interop with the broader CSI ecosystem
+csikit>=2.4
+csiread>=1.3.7
+

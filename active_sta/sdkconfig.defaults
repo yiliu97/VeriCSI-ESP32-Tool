@@ -1,0 +1,18 @@
+# Bench defaults for the receiving station. Matches the access point in
+# ../active_ap/sdkconfig.defaults, so a target change does not leave the two
+# ends on different credentials or a different channel.
+CONFIG_ESP_WIFI_SSID="VeriCSI-E18"
+# Placeholder: set the bench passphrase locally (idf.py menuconfig).
+CONFIG_ESP_WIFI_PASSWORD="mypassword"
+CONFIG_WIFI_CHANNEL=6
+CONFIG_SHOULD_COLLECT_CSI=y
+CONFIG_ESP32_CSI_TOOL_DIAG_FRAME_PERIOD_S=10
+
+# Pure receiver. The Kconfig default is y, and set-target restores that
+# default, so this line has to be here or every target change silently
+# re-enables the uplink. A station that transmits elicits access-point
+# responses that enter its own count: it inflates the observed frame rate
+# (85 frames/s independent of the broadcast rate), roughly doubles CPU load,
+# and drives loss measured against a transmit count negative. See
+# experiments/e21_c_group/C1_RESULT.md.
+CONFIG_ESP32_CSI_TOOL_STA_UPLINK=n

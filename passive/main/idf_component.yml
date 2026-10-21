@@ -1,0 +1,20 @@
+﻿# ESP32 CSI Tool v2.0 - passive managed-component dependencies
+#
+# espressif/esp_tinyusb is only required for the ESP32-S2 USB-CDC sink.
+# (CONFIG_ESP32_CSI_TOOL_SINK_USB_CDC=y, default-on for the S2 sdkconfig).
+# The `rules` block restricts the dependency to S2 builds, so other targets
+# (esp32 / s3 / c3 / c5 / c6 / c61) do not download or compile TinyUSB.
+#
+# The condition keyword is `target`, NOT `idf_target`. `idf_target` is not a
+# recognised variable in the if-clause grammar and evaluates to false for every
+# target, which silently disabled this dependency on ESP32-S2 and made the
+# USB-CDC sink fail with `fatal error: tinyusb.h: No such file or directory`.
+#
+# Reference: https://docs.espressif.com/projects/idf-component-manager/en/latest/reference/manifest_file.html
+
+dependencies:
+  espressif/esp_tinyusb:
+    version: "^2.1.1"
+    rules:
+      - if: 'target == "esp32s2"'
+  espressif/esp_csi_gain_ctrl: ^0.1.5

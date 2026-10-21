@@ -1,0 +1,26 @@
+#
+# VeriCSI-ESP32 - ESP32-C61 (RISC-V single-core, 2.4 GHz Wi-Fi 6) overrides
+#
+# Verified board: ESP32-C61-DEVKITC-1-N8R2 (Digikey UK).
+# C61 is the cost-reduced C6 variant. Affected by espressif/esp-idf#18118:
+# CSI is broken for 802.11g packets. Workaround: disable 11g protocol bit
+# and enable acquire_csi_force_lltf. See docs/known_issues.md.
+#
+
+CONFIG_IDF_TARGET="esp32c61"
+
+CONFIG_FREERTOS_UNICORE=y
+
+# On-chip USB-Serial-JTAG.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Workaround for #18118 (CSI broken for 802.11g packets): the 11g protocol
+# bit is masked at RUNTIME in _components/wifi_band_component.h (no Kconfig
+# symbol exists for per-protocol selection). Forcing L-LTF acquisition below
+# is the second half of the workaround; it restores CSI for legacy frames.
+CONFIG_SHOULD_COLLECT_ONLY_LLTF=y
+
+CONFIG_SEND_CSI_TO_SERIAL=y
+CONFIG_SEND_CSI_TO_SD=n
+
+CONFIG_SHOULD_COLLECT_CSI=y

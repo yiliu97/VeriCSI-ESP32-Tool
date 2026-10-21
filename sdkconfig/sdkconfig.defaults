@@ -1,0 +1,50 @@
+#
+# VeriCSI-ESP32 - shared sdkconfig defaults
+#
+# Applied to all targets. Per-chip overrides live in sdkconfig.defaults.<target>.
+# CMake automatically merges them when `idf.py set-target <target>` is invoked.
+#
+# Reference:
+#   https://docs.espressif.com/projects/esp-idf/en/v6.0.1/api-guides/build-system.html
+#
+
+#
+# FreeRTOS
+#
+CONFIG_FREERTOS_HZ=1000
+
+#
+# Wi-Fi CSI
+#
+CONFIG_ESP_WIFI_CSI_ENABLED=y
+
+#
+# Console / monitor baud rate (chip-specific)
+#
+# v6.0.1 only honours CONFIG_ESP_CONSOLE_UART_BAUDRATE when the console choice
+# is CONFIG_ESP_CONSOLE_UART_CUSTOM=y; under the default ESP_CONSOLE_UART_DEFAULT
+# the baud symbol is read-only 115200 and any user-set value is silently ignored
+# (kconfgen reports "Disabled symbol with user-set value"). Chips that use the
+# native USB-Serial-JTAG console (S3 / C3 / C5 / C6 / C61) don't even need
+# the symbol because the baud is irrelevant for the JTAG path.
+#
+# Therefore the 921600 baud setting is now per-chip-defaults:
+#   sdkconfig.defaults.esp32   - sets CUSTOM=y + 921600 (TTGO T8 V1.7, NodeMCU)
+#   sdkconfig.defaults.esp32s2 - sets CUSTOM=y + 921600 (LOLIN S2 mini)
+# Other chips keep their JTAG / CDC console defaults.
+#
+# Hernandez 2020 used 921600 over UART because UART CSI throughput was the
+# binding constraint (~100 pps cap). This tool keeps that for UART-only boards
+# while letting JTAG-equipped boards run at native USB-Full-Speed (~12 Mbps).
+
+#
+# Compiler
+# Picolibc is the v6.0 default; nothing to set here.
+# Keep -Werror enabled (default) so that v4.3->v6.0.1 migration warnings surface immediately.
+#
+
+#
+# Logging
+# Default INFO; set DEBUG for development only.
+#
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

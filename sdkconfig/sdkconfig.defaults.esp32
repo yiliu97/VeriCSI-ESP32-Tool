@@ -1,0 +1,26 @@
+#
+# VeriCSI-ESP32 - ESP32 (classic, Xtensa LX6 dual-core) overrides
+#
+# Verified boards: TTGO T8 V1.7 (with on-board SD slot), NodeMCU ESP32-WROOM-32U.
+#
+
+CONFIG_IDF_TARGET="esp32"
+
+# Dual core (default).
+# CONFIG_FREERTOS_UNICORE is unset.
+
+# Console: UART0 at 921600 baud (Hernandez 2020 setting; TTGO T8 V1.7 has no
+# USB-Serial-JTAG so UART is the only choice). v6.0.1 requires
+# ESP_CONSOLE_UART_CUSTOM=y to unlock the user-settable baud field; the GPIO
+# defaults under CUSTOM (TX=GPIO1, RX=GPIO3, UART0) are identical to
+# ESP_CONSOLE_UART_DEFAULT, so this only changes the baud rate.
+CONFIG_ESP_CONSOLE_UART_CUSTOM=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=921600
+
+# Hernandez 2020 hardware path: UART + optional SD card on TTGO T8. On boards
+# without an SD slot (NodeMCU) the SD sink fails gracefully at init and the
+# serial sink continues.
+CONFIG_SEND_CSI_TO_SERIAL=y
+CONFIG_SEND_CSI_TO_SD=y
+
+CONFIG_SHOULD_COLLECT_CSI=y

@@ -1,0 +1,16 @@
+# Bench defaults for the sounding access point.
+#
+# idf.py set-target regenerates sdkconfig from scratch and applies this file.
+# Without it a target change silently reverts the SSID, the channel and the
+# broadcast settings to their Kconfig defaults, and the board comes up as an
+# ordinary access point that sounds nothing. Observed 2026-08-17 during a
+# role swap: two flashes went out with no gptimer broadcast configured.
+CONFIG_ESP_WIFI_SSID="VeriCSI-E18"
+# Placeholder: set the bench passphrase locally (idf.py menuconfig).
+CONFIG_ESP_WIFI_PASSWORD="mypassword"
+CONFIG_WIFI_CHANNEL=6
+CONFIG_SHOULD_COLLECT_CSI=y
+CONFIG_ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST=y
+CONFIG_ESP32_CSI_TOOL_BCAST_PHY_LEGACY_6M=y
+CONFIG_ESP32_CSI_TOOL_BROADCAST_RATE_HZ=100
+CONFIG_ESP32_CSI_TOOL_DIAG_FRAME_PERIOD_S=10

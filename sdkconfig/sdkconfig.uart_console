@@ -1,0 +1,15 @@
+#
+# VeriCSI-ESP32 - UART console fallback override (USJ-primary targets)
+#
+# Appended after the per-target defaults when the build is configured with
+# `idf.py -DUART_CONSOLE=1 reconfigure`. Routes the primary console to UART0
+# at 921600 baud on the targets that default to USB-Serial-JTAG (C3/S3/C6/C61),
+# for boards or hosts where the USJ port is unavailable. The secondary
+# USB-Serial-JTAG console (IDF default when the primary is UART) keeps
+# mirroring output to the USB port on chips that expose one.
+# UART_CUSTOM=y is required for the baud field to be honoured (same Kconfig
+# behaviour as the esp32/s2/c5 defaults).
+#
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=n
+CONFIG_ESP_CONSOLE_UART_CUSTOM=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=921600

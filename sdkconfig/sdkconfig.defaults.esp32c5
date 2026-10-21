@@ -1,0 +1,68 @@
+#
+# VeriCSI-ESP32 - ESP32-C5 (RISC-V single-core, dual-band Wi-Fi 6) overrides
+#
+# Verified board: DFRobot FireBeetle 2 ESP32-C5 (DFR1222, 4 MB flash, no SD slot).
+#
+# Band selection: the C5 is the only ESP32 with a 5 GHz radio.
+# We default to 2.4 GHz only because of upstream issue espressif/esp-idf#18493
+# (static IQ buffer on 5 GHz channels). Users wanting to verify the upstream
+# fix can switch to 5G_ONLY (or AUTO dual-band) in menuconfig under
+# `VeriCSI-ESP32 Config -> ESP32-C5 band selection`.
+# The runtime helper `wifi_band_apply()` in `_components/wifi_band_component.h`
+# applies the selected mode via `esp_wifi_set_band_mode()` after Wi-Fi start.
+#
+
+CONFIG_IDF_TARGET="esp32c5"
+
+CONFIG_FREERTOS_UNICORE=y
+
+# Console: UART primary + USB-Serial-JTAG SECONDARY - the IDF default for C5,
+# and deliberately NOT the USJ-primary choice the other USJ chips (C3/C6/C61/S3)
+# use. On C5 + IDF v6.0.1, a USJ-PRIMARY console in a build that links
+# esp_driver_usb_serial_jtag kills the console and the whole USJ CDC at boot
+# (zero output, esptool "Write timeout"; root-caused by bisection on stock
+# hello_world - see docs/known_issues.md). The driver cannot be kept out of the
+# build either: `vfs` hard-PRIV_REQUIRES it (vfs/CMakeLists.txt:17, IDF-13984),
+# so EXCLUDE_COMPONENTS is silently overridden, and this project needs vfs for
+# the SD/FATFS sink. With USJ as SECONDARY the simple polling writer is used
+# instead of the driver path, and all output (bootloader log included) still
+# arrives over the USB port - verified on hardware. Trade-off: console INPUT
+# now goes to UART0, so interactive stdin over USB is unavailable on C5; CSI
+# capture does not use stdin.
+# The UART primary must NOT run at the 115200 default: printf writes every CSI
+# line to BOTH consoles and blocks on the slower one, and a ~550-byte CSI line
+# at 115200 baud caps the pipeline at ~21 lines/s. Measured on hardware
+# (2026-08-01 STA captures):
+#   115200: csi_rx 99.7 fps at the callback, 76 fps dropped at the queue,
+#           23 fps delivered, task_wdt starvation on the single core.
+#   921600: 190 fps delivered but a dual-stream load (100 Hz broadcast +
+#           ~109 fps ping unicast ~= 115 KB/s) still exceeds the ~92 KB/s
+#           budget: ~19 fps dropped, task_wdt still firing.
+# 2000000 was tried and is a TRAP on C5: the app boots (esptool no-reset
+# probe times out = running from flash) but produces ZERO output on both
+# consoles - the broken UART primary also wedges the USJ secondary mirror.
+# 921600 is the highest hardware-verified rate. Under the heaviest measured
+# load (100 Hz broadcast + ~109 fps ping unicast ~= 115 KB/s vs the ~92 KB/s
+# budget) it still drops ~19 fps and trips task_wdt; the E2 experiment
+# topology (100 Hz broadcast only, ~55 KB/s) fits with headroom. Nobody reads
+# the UART pins - the cost is pure mirror overhead - but the primary must stay
+# UART (see above; USJ-primary is broken on C5) and IDF offers no "primary
+# NONE + secondary USJ" combination. UART_CUSTOM is required for the baud
+# field to be honoured (same pattern as the esp32/s2 defaults). Secondary USJ
+# runs at USB speed; SECONDARY_USB_SERIAL_JTAG=y is the C5 Kconfig default
+# and needs no line here.
+CONFIG_ESP_CONSOLE_UART_CUSTOM=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=921600
+
+# Default band mode: 2.4 GHz only (#18493 workaround).
+# Flip to ESP32_CSI_TOOL_C5_BAND_MODE_5G_ONLY in menuconfig for 5 GHz.
+CONFIG_ESP32_CSI_TOOL_C5_BAND_MODE_2G_ONLY=y
+
+# When 5 GHz is enabled, the default channel is 40 (UNII-1) at HT20.
+# These values only take effect when band mode is 5G_ONLY or AUTO.
+CONFIG_ESP32_CSI_TOOL_C5_5G_CHANNEL=40
+
+CONFIG_SEND_CSI_TO_SERIAL=y
+CONFIG_SEND_CSI_TO_SD=n
+
+CONFIG_SHOULD_COLLECT_CSI=y

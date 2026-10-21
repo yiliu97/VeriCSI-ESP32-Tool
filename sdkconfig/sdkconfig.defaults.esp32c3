@@ -1,0 +1,19 @@
+#
+# VeriCSI-ESP32 - ESP32-C3 (RISC-V single-core) overrides
+#
+# Verified board: ESP32-C3-DevKitM-1.
+# C3 is single-core; the CSI rx callback enqueues and a separate task
+# drains the queue (_components/csi_component.h).
+#
+
+CONFIG_IDF_TARGET="esp32c3"
+
+CONFIG_FREERTOS_UNICORE=y
+
+# C3 has on-chip USB-Serial-JTAG.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+CONFIG_SEND_CSI_TO_SERIAL=y
+CONFIG_SEND_CSI_TO_SD=n
+
+CONFIG_SHOULD_COLLECT_CSI=y

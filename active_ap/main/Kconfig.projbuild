@@ -1,0 +1,855 @@
+menu "VeriCSI-ESP32 Config"
+
+    config WIFI_CHANNEL
+        int "WiFi Channel"
+        default 6
+        help
+            Select the WiFi channel for the AP to communicate on. In North America, valid channels are {1,2,3,...,10,11}.
+
+    config ESP_WIFI_SSID
+        string "WiFi SSID"
+        default "myssid"
+        help
+            SSID (network name) for the example to connect to.
+
+    config ESP_WIFI_PASSWORD
+        string "WiFi Password"
+        default "mypassword"
+        help
+            WiFi password (WPA or WPA2) for the example to use.
+
+    config SHOULD_COLLECT_CSI
+        bool "Should this ESP32 collect and print CSI data?"
+        default y
+        help
+            Allowing only a single ESP32 to collect CSI will likely increase the sampling frequency of your experiments.
+
+    config ESP32_CSI_TOOL_DUMP_ACK_FRAMES
+        depends on SHOULD_COLLECT_CSI
+        bool "Capture CSI from ACK frames too (sets dump_ack_en=1)"
+        default n
+        help
+            Enables dump_ack_en in wifi_csi_acquire_config_t so the radio
+            also delivers CSI for control frames such as ACKs. The v2 CSV
+            `frame_type` column  tags each row as DATA / MGMT /
+            CTRL / ACK so downstream tooling can subset by frame class.
+            For timer-driven broadcast this has little
+            effect because broadcast frames do not generate ACKs; useful
+            mainly in the optional active_ap-with-real-STAs configuration.
+            Default n.
+
+    config SHOULD_COLLECT_ONLY_LLTF
+        depends on SHOULD_COLLECT_CSI
+        bool "(Advanced users only) Should we only collect LLTF?"
+        default y
+        help
+            Each CSI frame can contain CSI either calculated through
+            (1) legacy long training field (LLTF),
+            (2) high throughput LTF (HT-LTF) and/or
+            (3) space-time block code HT-LTF (STBC-HT-LTF).
+            However, not all CSI frames have HT-LTF or STBC-HT-LTF while all CSI frame have LLTF.
+            For beginners collecting only LLTF is the best option while advanced users can handle issues such as
+            (1) HT-LTF or STBC-HT-LTF being missing, and
+            (2) possible decreases in sampling rate due to serial connection saturation.
+            On ESP32-C61, force-LLTF is also the workaround for upstream issue espressif/esp-idf#18118
+            (CSI broken for 802.11g packets).
+            [Advanced Users]: I cannot always help with these advanced issues,
+            but if you have ideas on improvements to these issues please share!
+
+    config SEND_CSI_TO_SERIAL
+        depends on SHOULD_COLLECT_CSI
+        bool "Send CSI data to Serial"
+        default y
+        help
+            Sending data through serial (to a computer) can take time and buffer space.
+            If you are storing to an SD card, it may be useful to deselect this option.
+
+    config SEND_CSI_TO_SD
+        depends on SHOULD_COLLECT_CSI
+        bool "Send CSI data to SD"
+        default n
+        help
+            Sending data to an SD card can take time and buffer space.
+            If your ESP32 does not have an SD card, there is no reason to use this feature.
+            If you do though, the program will be recognize this and not attempt writing to the SD card.
+
+    #
+    # Deterministic application-layer broadcast for frequency-domain
+    # WiFi sensing, Wi-Fi 6 HE-LTF acquisition, and additional sinks.
+    #
+    menu "Application-layer broadcast (AP-side timer)"
+
+        config ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST
+            bool "Drive packet generation with a FreeRTOS gptimer (recommended)"
+            default n
+            help
+                When enabled, the AP fires a known-payload broadcast frame at a
+                target rate using a FreeRTOS general-purpose timer (gptimer)
+                instead of waiting for STA polling. This produces a much tighter
+                inter-arrival jitter distribution than the legacy STA-poll path
+                or esp-csi's ESP-NOW-based broadcast, which matters for
+                frequency-domain sensing (breathing rate, heart rate, FFT-based
+                analysis). See docs/packet_rate_guide.md.
+
+        choice ESP32_CSI_TOOL_BCAST_PHY_FORMAT
+            prompt "Broadcast frame PHY format"
+            depends on ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST
+            default ESP32_CSI_TOOL_BCAST_PHY_LEGACY_6M
+            help
+                PHY format of the injected broadcast frames. Legacy 6 Mbps
+                OFDM carries only the L-LTF training field and is decodable
+                by every 802.11a/g receiver. The HT-mixed formats add an
+                HT-LTF, which receivers record when ONLY_LLTF/FORCE_LLTF is
+                disabled; HT40 additionally requires the radio bandwidth at
+                40 MHz (ESP32_CSI_TOOL_2G_BANDWIDTH_HT40). HE20 adds an
+                HE-LTF and needs ESP32_CSI_TOOL_ENABLE_11AX. VHT20 adds a
+                VHT-LTF and applies at 5 GHz, so it is an ESP32-C5 format.
+
+                These select which acquire slot a receiver needs open to
+                produce CSI for the frames, which is what experiment E25
+                measures.
+
+        config ESP32_CSI_TOOL_BCAST_PHY_LEGACY_6M
+            bool "6 Mbps legacy OFDM (L-LTF only, most compatible)"
+
+        config ESP32_CSI_TOOL_BCAST_PHY_HT20_MCS0
+            bool "HT20 MCS0 (adds HT-LTF over 20 MHz)"
+
+        config ESP32_CSI_TOOL_BCAST_PHY_HT40_MCS0
+            bool "HT40 MCS0 (adds HT-LTF over 40 MHz)"
+
+        config ESP32_CSI_TOOL_BCAST_PHY_HE20_MCS0
+            bool "HE20 MCS0 (adds HE-LTF over 20 MHz, Wi-Fi 6 chips)"
+            depends on SOC_WIFI_HE_SUPPORT
+            help
+                Sets WIFI_PHY_MODE_HE20 on the ESP-NOW peer rate config.
+                Receivers need acquire_csi_su (ESP32_CSI_TOOL_ACQUIRE_HE_SU)
+                for these frames. Requires ESP32_CSI_TOOL_ENABLE_11AX on this
+                board.
+
+        config ESP32_CSI_TOOL_BCAST_PHY_VHT20_MCS0
+            bool "VHT20 MCS0 (adds VHT-LTF over 20 MHz, ESP32-C5 at 5 GHz)"
+            depends on IDF_TARGET_ESP32C5
+            help
+                Sets WIFI_PHY_MODE_VHT20 on the ESP-NOW peer rate config.
+                802.11ac exists only at 5 GHz, so this pairs with the 5 GHz
+                band selection. Receivers need acquire_csi_vht
+                (ESP32_CSI_TOOL_ACQUIRE_VHT), which is also C5-only.
+
+        endchoice
+
+        config ESP32_CSI_TOOL_BCAST_PHY_ALT_PATTERN
+            bool "Alternate HT20 and HT40 on a fixed four-frame pattern"
+            depends on ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST
+            default n
+            help
+                Switches the ESP-NOW peer phymode per frame on the repeating
+                pattern HT20, HT40, HT20, HT20, overriding the format chosen
+                above. Off by default and with no effect on any other build.
+
+                This exists so one sender produces both the cross-format and
+                the same-format frame pairs of an amplitude comparison. Two
+                senders, one per format, put a transmit-chain and channel
+                difference into every pair, and the same-format reference
+                condition then measures that difference rather than the
+                measurement floor, which makes the comparison depend on how
+                far apart the two senders sit.
+
+                The pattern yields two adjacent pairs of each kind per period,
+                at the same time separation, interleaved at the period scale.
+
+                Requires the 40 MHz radio setting
+                (ESP32_CSI_TOOL_2G_BANDWIDTH_HT40) because HT40 frames need
+                it. The secondary channel is pinned below, as it is for a
+                plain HT40 build. The 20 MHz frames go out on the primary.
+
+        config ESP32_CSI_TOOL_BCAST_TX_POWER_LADDER
+            bool "Cycle the transmit power through a fixed ladder"
+            depends on ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST
+            default n
+            help
+                Steps esp_wifi_set_max_tx_power() through 80, 56, 32 and 16
+                quarter-dBm (20, 14, 8 and 4 dBm) every
+                BCAST_TX_LADDER_FRAMES frames, overriding AP_MAX_TX_POWER_QDBM
+                after start-up. Off by default and with no effect on any other
+                build.
+
+                A receive-gain experiment needs the receive level to move. On a
+                bench where the sender, the receiver and the room are all
+                still, automatic gain control has nothing to respond to and
+                settles on one or two values, so locking it changes nothing and
+                the comparison measures nothing. The ladder supplies the
+                stimulus from the transmit side, which needs no attenuator and
+                no external antenna connector.
+
+                The 16 dB span is chosen to exceed the gain step size by a wide
+                margin. Levels are not encoded in the frame; an analysis that
+                needs them reads the receiver's own reported level.
+
+        config ESP32_CSI_TOOL_BCAST_TX_LADDER_FRAMES
+            int "Frames per transmit-power ladder step"
+            depends on ESP32_CSI_TOOL_BCAST_TX_POWER_LADDER
+            range 10 100000
+            default 500
+            help
+                500 frames is 10 s at 50 Hz, so one full cycle takes 40 s and a
+                600 s run covers fifteen cycles.
+
+        config ESP32_CSI_TOOL_BCAST_MCS
+            int "Broadcast MCS index for the HT / HE / VHT formats"
+            depends on ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST
+            range 0 9
+            default 0
+            help
+                Modulation and coding scheme index for the ESP-NOW transmit
+                path, ignored by the legacy 6 Mbps format. Default 0, which is
+                the rate every capture before this option was taken at.
+
+                Set it to hold modulation order fixed while something else
+                varies. The E26 control needed a broadcast leg at the same
+                MCS the driver had rate-adapted a unicast leg to, since
+                otherwise addressing and modulation order change together and
+                neither can be attributed.
+
+                HT20 on a single spatial stream carries MCS 0 to 7. HE20
+                extends to 9. A value the radio cannot use is rejected by
+                esp_now_set_peer_rate_config, which is logged rather than
+                silently ignored, so read the boot banner.
+
+        config ESP32_CSI_TOOL_BCAST_SRC_MAC
+            string "Broadcast source MAC override (empty = use the SoftAP MAC)"
+            depends on ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST
+            default ""
+            help
+                Format aa:bb:cc:dd:ee:ff. Leave empty for the default, which
+                sends from this board's SoftAP address.
+
+                Set it only to satisfy a third-party receiver that filters CSI
+                on the transmitter address. esp-csi's csi_recv example drops
+                every frame whose info->mac is not 1a:00:00:00:00:00, so a
+                head-to-head in which both tools receive one shared transmit
+                stream needs this board to send from that address. Overriding
+                here keeps the competitor unmodified, which is the condition
+                the head-to-head bench of E10 was built under.
+
+                The address must be unicast, that is bit 0 of the first octet
+                clear. A group address is rejected with an error and the
+                default is kept.
+
+        config ESP32_CSI_TOOL_BCAST_DST_MAC
+            string "Broadcast destination MAC override (empty = broadcast)"
+            depends on ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST
+            default ""
+            help
+                Format aa:bb:cc:dd:ee:ff. Leave empty for the default, which
+                sends to ff:ff:ff:ff:ff:ff.
+
+                Set it only to satisfy a witness that filters on the
+                destination. An Intel 5300 in monitor mode produces CSI only
+                for frames addressed to a fixed 00:16:ea:12:34:56, and an
+                ESP32 access point's broadcast yields zero records in either
+                of its modes, so a bench that wants the 5300 to witness the
+                same frames the device under test receives has to address them
+                to it.
+
+                A unicast destination is acknowledged at the MAC. A witness
+                that never acknowledges may therefore draw retries, which
+                carry the same sequence number: gptimer_tx still counts
+                originated frames, but the transmit path is no longer the
+                unacknowledged one the loss-accounting anchor was measured on.
+                Read gptimer_fail and the achieved rate before trusting a run
+                with this set.
+
+        config ESP32_CSI_TOOL_BCAST_APP_SEQ
+            bool "Assign the 802.11 sequence number in the application"
+            depends on ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST && ESP32_CSI_TOOL_BCAST_PHY_LEGACY_6M
+            default n
+            help
+                By default the transmit path is called with en_sys_seq set, so
+                the MAC assigns the Sequence Control field and the application
+                does not know which number each frame carried. With this
+                option the application writes the field itself from the
+                broadcast counter and calls the transmit path with en_sys_seq
+                clear, so every transmitted frame has a sequence number the
+                sender recorded.
+
+                This is what turns receiver-side loss accounting from an
+                internal consistency check into a measurement against a known
+                transmit count: the receiver's rx_seq column can be matched
+                against the sender's counter directly.
+
+                Off by default. Enabling it changes what the AP puts on the
+                air, so captures taken with it set are not interchangeable
+                with earlier ones. Only the legacy OFDM broadcast format is
+                supported: the HT formats transmit through ESP-NOW, which
+                builds its own header.
+
+    endmenu
+
+    menu "SoftAP radio parameters"
+
+        config ESP32_CSI_TOOL_BEACON_INTERVAL_TU
+            int "SoftAP beacon interval (TU)"
+            range 100 60000
+            default 100
+            help
+                Beacon interval of this node's SoftAP, in Time Units
+                (1 TU = 1024 us). ESP-IDF requires a multiple of 100 in the
+                range 100..60000; values in between are rejected by the driver.
+
+                  100 TU = 102.4 ms = 9.765625 Hz   (default)
+                  200 TU = 204.8 ms = 4.882813 Hz
+                  300 TU = 307.2 ms = 3.255208 Hz
+
+                Beacons are the dominant strictly-periodic MAC event in a quiet
+                channel, so this is the knob for testing whether a spectral
+                feature is beacon-locked.
+
+                IMPORTANT - what this knob can and cannot do. A periodic pulse
+                train of period T has harmonics at every n/T, so 200 TU and
+                300 TU both still contain the 9.765625 Hz component (as their
+                2nd and 3rd harmonic). Changing this value therefore scales the
+                AMPLITUDE of a beacon-locked line (roughly as 1/T at fixed
+                absolute frequency) but does NOT move it in frequency. To move
+                a beat frequency, sweep BROADCAST_PERIOD_US instead.
+
+                Written to the CSV boot header as # CSI_BEACON_INTERVAL_TU.
+
+    endmenu
+
+    menu "Application-layer broadcast rate"
+
+        config ESP32_CSI_TOOL_BROADCAST_PERIOD_US
+            int "[1] PERIOD in microseconds (preferred; 0 = use [2] below)"
+            depends on ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST
+            range 0 1000000
+            default 0
+            help
+                MICROSECONDS, not Hz. Valid range 0..1000000.
+                100 Hz = 10000 us. 10 Hz = 100000 us.
+
+                Alarm period applied verbatim to the 1 MHz gptimer. Set
+                non-zero to override [2] BROADCAST_RATE_HZ below.
+
+                Use this whenever the exact rate matters. Whole-Hz resolution
+                cannot express rates near the 802.11 beacon interval
+                (100 TU = 102400 us = 9.765625 Hz): 9.4 / 9.6 / 9.765625 / 9.9 /
+                10.1 / 10.3 Hz all round to 9 or 10 Hz. As periods they are
+                exact:
+
+                  9.4      Hz -> 106383 us
+                  9.6      Hz -> 104167 us
+                  9.765625 Hz -> 102400 us   (= beacon interval; alias -> DC)
+                  9.9      Hz -> 101010 us
+                  10.0     Hz -> 100000 us
+                  10.1     Hz ->  99010 us
+                  10.3     Hz ->  97087 us
+
+                The configured value is written to the CSV boot header as
+                # CSI_BROADCAST_PERIOD_US so captures stay self-describing.
+
+        config ESP32_CSI_TOOL_BROADCAST_RATE_HZ
+            int "[2] RATE in whole Hz (legacy; ignored when [1] is non-zero)"
+            depends on ESP32_CSI_TOOL_AP_MODE_GPTIMER_BROADCAST
+            range 1 2000
+            default 100
+            help
+                HERTZ, not microseconds. Valid range 1..2000.
+
+                Legacy knob kept so existing configs keep working. It is
+                IGNORED whenever [1] BROADCAST_PERIOD_US above is non-zero.
+
+                Whole-Hz only, so it cannot express the rates that the
+                sounding-period sweep needs (9.4 / 9.6 / 9.765625 / 9.9 / 10.1 /
+                10.3 Hz all round to 9 or 10 Hz). Prefer [1].
+    endmenu
+
+    config ESP32_CSI_TOOL_2G_BANDWIDTH_HT40
+        bool "2.4 GHz radio bandwidth HT40 (else HT20)"
+        default n
+        help
+            Sets the 2.4 GHz radio bandwidth to 40 MHz. On HE-era chips
+            (C5 / C6 / C61) this populates wifi_bandwidths_t.ghz_2g with
+            WIFI_BW40; on pre-HE chips (ESP32 / S2 / S3 / C3) it calls the
+            classic esp_wifi_set_bandwidth(iface, WIFI_BW_HT40). Applies to
+            STA and AP interfaces; the passive app runs in WIFI_MODE_NULL
+            with no interface and keeps the driver default bandwidth.
+            HT40 doubles channel occupancy: enable it on BOTH ends of the
+            link, and expect longer CSI records (HT-LTF over 128
+            subcarriers).
+
+    config ESP32_CSI_TOOL_2G_BANDWIDTH_HT20
+        bool "Force 2.4 GHz softAP bandwidth to HT20 (pre-HE chips)"
+        default n
+        help
+            Pre-HE softAP (ESP32 / S2 / S3 / C3) defaults to HT40. Enable
+            this to force a 20 MHz BSS via esp_wifi_set_bandwidth(WIFI_BW_HT20)
+            before the AP starts, so an ESP-NOW HT20 broadcast rate produces
+            genuine 20 MHz frames. Used by the X1 cross-implementation leg
+            (Intel 5300 client on the 30-group HT20 grid). Ignored if HT40
+            is also selected.
+
+    config ESP32_CSI_TOOL_AP_MAX_TX_POWER_QDBM
+        int "AP max TX power in 0.25 dBm units (0 = driver default)"
+        default 0
+        range 0 84
+        help
+            Cap the softAP transmit power via esp_wifi_set_max_tx_power(),
+            called after esp_wifi_start(). Units are 0.25 dBm (the ESP-IDF
+            API convention): 8 = 2 dBm, 20 = 5 dBm, 80 = 20 dBm. 0 leaves the
+            driver default (~+18 dBm). Set low (e.g. 8) for the conducted X1
+            leg where the AP feeds a splitter over cable and full power would
+            overload the cabled receivers.
+
+    menu "Wi-Fi 6 HE-LTF acquisition (C5 / C6 / C61 only)"
+        depends on SHOULD_COLLECT_CSI
+
+        config ESP32_CSI_TOOL_ENABLE_11AX
+            bool "Enable 802.11ax (Wi-Fi 6) at the MAC protocol layer"
+            depends on SOC_WIFI_HE_SUPPORT
+            default y
+            help
+                Required for the AP to broadcast 11ax frames (and therefore
+                HE-LTF). Disable for an 11n-only ablation. See
+                _components/wifi_band_component.h.
+
+        config ESP32_CSI_TOOL_ACQUIRE_HE_SU
+            bool "Acquire HE-LTF in single-user (SU) mode"
+            depends on SOC_WIFI_HE_SUPPORT
+            default y
+            help
+                Sets acquire_csi_su=1 in wifi_csi_acquire_config_t.
+                Default y on HE-capable chips (C5 / C6 / C61): broadcast
+                frames the AP transmits in 11ax mode are HE-SU-format,
+                and any associated Wi-Fi 6 STA's downlink frames also
+                use the SU path. Disable only for an explicit 11n-only
+                ablation.
+
+        config ESP32_CSI_TOOL_ACQUIRE_HE_MU
+            bool "Acquire HE-LTF in multi-user (MU) mode"
+            depends on SOC_WIFI_HE_SUPPORT
+            default n
+            help
+                Sets acquire_csi_mu=1 in wifi_csi_acquire_config_t.
+                MU-MIMO frames are always beamformed (post-steering CSI),
+                and only triggered when multiple STAs receive
+                simultaneously. For timer-driven broadcast (single-AP
+                gptimer broadcast self-pair) MU is never used. Enable
+                only for OFDMA / MU-MIMO throughput studies. Default n.
+
+        config ESP32_CSI_TOOL_ACQUIRE_LEGACY
+            int "Acquire legacy L-LTF CSI (1=yes, 0=no)"
+            depends on SOC_WIFI_HE_SUPPORT
+            range 0 1
+            default 1
+            help
+                MAC v2/v3 acquire_csi_legacy flag. Set 0 to route HT and HE
+                frames exclusively through their own acquire slots: on a
+                40 MHz sniffing ESP32-C6 the legacy slot delivers near-zero
+                values for HT20 frames (observed 2026-08-08) while the HT
+                slots deliver healthy ones.
+
+                An int and not a bool: the C fallback for an undefined macro
+                is 1, so a bool left unset would read as enabled.
+
+        config ESP32_CSI_TOOL_ACQUIRE_HT20
+            int "Acquire CSI from HT20 (20 MHz) frames (1=yes, 0=no)"
+            depends on SOC_WIFI_HE_SUPPORT
+            range 0 1
+            default 1
+            help
+                Sets acquire_csi_ht20 in wifi_csi_acquire_config_t. Default 1,
+                since HT20 is the dominant format on 2.4 GHz networks and a
+                receiver with it off is blind to them. Set 0 to isolate a
+                single acquire slot, which is the sweep experiment E25 runs.
+
+                An int and not a bool: the C fallback for an undefined macro
+                is 1, so a bool left unset would read as enabled.
+
+        config ESP32_CSI_TOOL_ACQUIRE_HT40
+            bool "Acquire CSI from HT40 (40 MHz) frames"
+            depends on SOC_WIFI_HE_SUPPORT
+            default n
+            help
+                Sets acquire_csi_ht40=1 in wifi_csi_acquire_config_t so the
+                MAC v2 / v3 acquire path delivers CSI for 40 MHz HT frames.
+                Requires the radio bandwidth to be 40 MHz (see the 2.4 GHz
+                bandwidth option, or the ESP32-C5 5 GHz bandwidth option)
+                and an HT40-capable peer. The chip-aware decoder tags these
+                records as the HT40 layout.
+
+        config ESP32_CSI_TOOL_ACQUIRE_VHT
+            bool "Acquire CSI from VHT (802.11ac) frames"
+            depends on SOC_WIFI_HE_SUPPORT && IDF_TARGET_ESP32C5
+            default n
+            help
+                Sets acquire_csi_vht=1 in wifi_csi_acquire_config_t (MAC v3
+                only; the ESP32-C5 is the only family member with a 5 GHz
+                radio, and 802.11ac exists only at 5 GHz). VHT on this chip
+                is 20 MHz-only, so this option conflicts with the 5 GHz HT40
+                bandwidth option the same way 11ac in the protocol mask
+                does: use VHT20 sessions for ac capture.
+
+        config ESP32_CSI_TOOL_HE_STBC_MODE
+            int "HE-STBC mode (0/1/2)"
+            depends on SOC_WIFI_HE_SUPPORT
+            range 0 2
+            default 2
+
+        config ESP32_CSI_TOOL_ACQUIRE_DCM
+            bool "Acquire HE-LTF from DCM (Dual Carrier Modulation) PPDUs"
+            depends on SOC_WIFI_HE_SUPPORT
+            default n
+            help
+                Sets acquire_csi_dcm=1. DCM is an 802.11ax modulation
+                rarely used in normal AP deployments. Default n.
+
+        config ESP32_CSI_TOOL_ACQUIRE_BEAMFORMED
+            bool "Acquire CSI from beamformed packets too"
+            depends on SOC_WIFI_HE_SUPPORT
+            default n
+            help
+                Sets acquire_csi_beamformed=1. For an AP doing gptimer
+                broadcast, this has NO effect because
+                broadcast frames are never beamformed. Enable only if the
+                AP is also serving real STAs and you want to capture
+                downlink unicast HE-LTF for those STAs. Beamformed CSI
+                represents H * V, not H; see docs/known_issues.md for the
+                sensing-task feature-corruption notes.
+
+        config ESP32_CSI_TOOL_VAL_SCALE
+            int "val_scale_cfg"
+            default 0
+    endmenu
+
+    menu "Output sinks"
+        depends on SHOULD_COLLECT_CSI
+
+        config ESP32_CSI_TOOL_SINK_USB_JTAG
+            bool "USB-Serial-JTAG sink (C3 / S3 / C5 / C6 / C61)"
+            default n
+
+        config ESP32_CSI_TOOL_SINK_USB_CDC
+            bool "TinyUSB CDC sink (ESP32-S2; not hardware-verified)"
+            default n
+
+        config ESP32_CSI_TOOL_CDC_WAIT_HOST_S
+            int "Seconds to wait for the USB-CDC host before CSI starts"
+            depends on ESP32_CSI_TOOL_SINK_USB_CDC
+            default 30
+            range 0 600
+            help
+                The TinyUSB port opens only after the host enumerates the
+                device, so the header and the first rows written before the
+                host attaches never reach the capture file. With a non-zero
+                value csi_init waits until the host asserts DTR, or until this
+                many seconds pass, before it enables CSI. A capture then holds
+                its boot session, which the whole-session verdict needs.
+                0 starts CSI at once.
+
+        config ESP32_CSI_TOOL_SINK_UDP
+            bool "UDP sink"
+            default n
+
+        config ESP32_CSI_TOOL_UDP_HOST
+            string "UDP destination host (IPv4)"
+            depends on ESP32_CSI_TOOL_SINK_UDP
+            default "192.168.4.2"
+
+        config ESP32_CSI_TOOL_UDP_PORT
+            int "UDP destination port"
+            depends on ESP32_CSI_TOOL_SINK_UDP
+            range 1 65535
+            default 5005
+    endmenu
+
+    menu "PSRAM ring buffer (ESP32-S3 with Octal PSRAM)"
+        depends on SHOULD_COLLECT_CSI && SPIRAM
+
+        config ESP32_CSI_TOOL_PSRAM_RING_BUFFER
+            bool "Allocate the CSI queue in PSRAM (heap_caps_malloc MALLOC_CAP_SPIRAM)"
+            default n
+            help
+                Allocate the CSI consumer queue's bulk item array from
+                PSRAM. Useful on ESP32-S3 with Octal 8 / 16 MB PSRAM for
+                long-recording AP-side captures. See
+                _components/csi_component.h.
+
+        config ESP32_CSI_TOOL_PSRAM_QUEUE_DEPTH
+            int "PSRAM-backed queue depth (item count)"
+            depends on ESP32_CSI_TOOL_PSRAM_RING_BUFFER
+            range 256 65536
+            default 4096
+            help
+                ~500 byte per item. 4096 items = ~2 MB ring (40 s at 100 Hz).
+    endmenu
+
+    menu "Diagnostics and consumer scheduling"
+        depends on SHOULD_COLLECT_CSI
+
+        config ESP32_CSI_TOOL_DIAG_FRAME_PERIOD_S
+            int "Diagnostic frame period (seconds; 0 = disabled)"
+            range 0 3600
+            default 10
+            help
+                Every N seconds the CSI consumer task emits a `# DIAG,...`
+                comment line carrying cumulative drop counts, heap stats and
+                gptimer broadcast TX / failure / sequence counters. v1 / v2
+                CSV parsers skip lines that begin with `#`. Set to 0 to
+                disable.
+
+        config ESP32_CSI_TOOL_RECORD_DIE_TEMP
+            bool "Sample the on-die temperature into each record"
+            default y
+            help
+                Populates the die_temp_c10 column with the on-die temperature
+                in tenths of a degree Celsius, sampled on the diagnostic
+                cadence rather than per record because the sensor is slow.
+
+                This exists because a device clock's rate moves with die
+                temperature: self-heating under Wi-Fi load shifts one board by
+                4 to 8 ppm within minutes, so a rate calibration only transfers
+                at thermal equilibrium. Carrying the temperature with the
+                record turns that from a caveat into a covariate.
+
+                Turning it off does NOT remove the column. The schema is a
+                fixed superset across every SoC and every build, so the column
+                is always emitted and reports -1000 when the part has no sensor
+                (the original ESP32) or when this option is off. A reader can
+                then separate "not measured" from a measurement, which is what
+                the NULL semantics are for.
+
+        config ESP32_CSI_TOOL_RX_GAIN_CTRL
+            bool "Read the per-record receive gain (schema v2.2)"
+            default n
+            help
+                Links the vendor component esp_csi_gain_ctrl and fills the
+                agc_gain and fft_gain columns from each record's
+                receive-control structure. With this off both columns read -1,
+                which is how every capture in this repository before
+                2026-08-18 was taken.
+
+                Automatic gain control is a documented source of cross-device
+                CSI disagreement, and a capture that does not record the gain
+                cannot be inverted to a gain-independent quantity afterwards.
+                Recording it per record is what makes that inversion possible.
+
+                The component ships as a precompiled static library per IDF
+                version and target. It is Apache-licensed but not
+                source-available, so a capture taken with this option depends
+                on a binary this project cannot rebuild. Leave it off unless
+                the gain is the subject of the measurement.
+
+                Requires the dependency in main/idf_component.yml:
+                idf.py add-dependency "espressif/esp_csi_gain_ctrl^0.1.5"
+
+        config ESP32_CSI_TOOL_RX_GAIN_FORCE
+            bool "Record a forced receive-gain value"
+            default n
+            help
+                States in every record that this build locks the receive gain,
+                and to what value, through the gain_force_val column.
+
+                ESP-IDF exposes no public API to read or set the automatic gain
+                control, so this option does not itself lock anything: it
+                declares a lock applied by other means. With it off the column
+                reports -1, which is the honest description of every capture in
+                this repository, all of which ran with the gain free.
+
+                The distinction matters because automatic gain control is a
+                documented source of cross-device CSI disagreement, and a
+                consumer that cannot tell a free-gain capture from a locked one
+                cannot correct for it.
+
+        config ESP32_CSI_TOOL_RX_GAIN_FORCE_VALUE
+            int "Forced receive-gain value"
+            depends on ESP32_CSI_TOOL_RX_GAIN_FORCE
+            range 0 255
+            default 0
+            help
+                The value written to the gain_force_val column. Meaningful only
+                if the gain is actually locked to it by other means.
+
+        config ESP32_CSI_TOOL_RX_GAIN_FORCE_FFT
+            int "Forced FFT-gain value"
+            depends on ESP32_CSI_TOOL_RX_GAIN_FORCE
+            range -128 127
+            default 0
+            help
+                The FFT-gain half of the lock. esp_csi_gain_ctrl takes the
+                receive gain as an AGC value and an FFT value, so locking one
+                without the other locks nothing.
+
+                Pick both from the distribution a free-gain session records in
+                the agc_gain and fft_gain columns, not by guessing. Picking the
+                value that makes a later result look better cannot be told
+                apart from picking one honestly, which is why the order is
+                fixed: measure free, take the median, then lock.
+
+
+        config ESP32_CSI_TOOL_DIAG_CPU_LOAD
+            bool "Report CPU load in the diagnostic frame"
+            default n
+            select FREERTOS_USE_TRACE_FACILITY
+            select FREERTOS_GENERATE_RUN_TIME_STATS
+            help
+                Appends cpu_load_permille to each `# DIAG` line: the fraction
+                of the last diagnostic interval the CPU spent outside the idle
+                task, in tenths of a percent, or -1 when unavailable.
+
+                This is the term the vendor current figures leave out. A
+                datasheet quotes receive current with the CPU idle and the
+                peripherals disabled, which is not the condition a capture runs
+                in, so that figure bounds a capture from below and says nothing
+                about how far below. Measured here, an ESP32-S2 delivering
+                111 frames/s sits at 96 percent.
+
+                It is NOT energy. These parts expose no current or power
+                sensor, so nothing on the device can measure consumption; an
+                energy figure needs an external meter.
+
+                Off by default because it selects the FreeRTOS run-time stats,
+                which add per-task accounting to every context switch. That
+                cost lands on the capture path, so enable it when the number is
+                wanted and leave it off for throughput runs.
+
+                Cross-SoC comparison: the load rises with delivery rate (an
+                ESP32-S2 reads 89 percent at 97 frames/s and 95 percent at
+                110), so quote it at one fixed operating point. This project
+                uses a 100 Hz access-point sounding rate as that reference.
+
+        config ESP32_CSI_TOOL_CONSUMER_CORE
+            int "CSI consumer task pinned core (0 or 1)"
+            depends on !FREERTOS_UNICORE
+            range 0 1
+            default 0
+
+        config ESP32_CSI_TOOL_CONSUMER_YIELD_EVERY
+            int "CSI consumer cooperative yield interval (frames; 0 = never)"
+            range 0 1024
+            default 32
+    endmenu
+
+    menu "Binary frame sink"
+        depends on SHOULD_COLLECT_CSI
+
+        config ESP32_CSI_TOOL_SINK_BINARY
+            bool "Emit binary frames in addition to CSV"
+            default n
+            help
+                Each captured CSI frame is also serialised into a packed
+                binary record and written to stdout (CSIF magic + 108-byte
+                metadata + CSI payload + CRC32). Use
+                python_utils/csi_bin_to_csv.py to recover CSV from a
+                captured binary stream.
+    endmenu
+
+    config ESP32_CSI_TOOL_UDP_BATCH_LINES
+        int "UDP datagram batch size (CSV lines per datagram)"
+        depends on ESP32_CSI_TOOL_SINK_UDP
+        range 1 32
+        default 1
+
+    menu "ESP32-C5 Wi-Fi band selection"
+        depends on IDF_TARGET_ESP32C5
+
+        choice ESP32_CSI_TOOL_C5_BAND_MODE
+            prompt "ESP32-C5 Wi-Fi band mode"
+            default ESP32_CSI_TOOL_C5_BAND_MODE_2G_ONLY
+            help
+                WARNING: 5 GHz CSI is subject to upstream issue
+                espressif/esp-idf#18493 (static IQ buffer); empirically
+                verify CSI varies before relying on the data.
+
+            config ESP32_CSI_TOOL_C5_BAND_MODE_2G_ONLY
+                bool "2.4 GHz only (default; #18493 workaround)"
+            config ESP32_CSI_TOOL_C5_BAND_MODE_5G_ONLY
+                bool "5 GHz only (experimental)"
+            config ESP32_CSI_TOOL_C5_BAND_MODE_AUTO
+                bool "Auto / dual-band (experimental)"
+        endchoice
+
+        config ESP32_CSI_TOOL_C5_5G_CHANNEL
+            int "ESP32-C5 5 GHz channel"
+            depends on !ESP32_CSI_TOOL_C5_BAND_MODE_2G_ONLY
+            range 36 165
+            default 40
+
+        config ESP32_CSI_TOOL_C5_5G_BANDWIDTH_HT40
+            bool "ESP32-C5 5 GHz bandwidth: HT40 (else HT20)"
+            depends on !ESP32_CSI_TOOL_C5_BAND_MODE_2G_ONLY
+            default n
+    endmenu
+
+    #
+    # Hidden VERICSI-prefix mirrors of the legacy Kconfig names.
+    #
+    config ESP32_CSI_TOOL_COLLECT_CSI
+        bool
+        default SHOULD_COLLECT_CSI
+
+    config ESP32_CSI_TOOL_FORCE_LLTF
+        bool
+        default SHOULD_COLLECT_ONLY_LLTF
+
+    config ESP32_CSI_TOOL_SINK_UART
+        bool
+        default SEND_CSI_TO_SERIAL
+
+    config ESP32_CSI_TOOL_SINK_SD
+        bool
+        default SEND_CSI_TO_SD
+
+    menu "Acquisition contract (2026-09-15)"
+
+        config ESP32_CSI_TOOL_CAPTURE_DURATION_S
+            int "Finite capture duration in seconds (0 = run forever)"
+            default 0
+            help
+                When set above 0, the consumer task stops admitting CSI
+                callbacks after this many seconds, drains its queue, emits a
+                terminal "# DIAG_END" frame whose drained marker certifies
+                the tail, flushes every sink, and parks itself. Used by the
+                accounting-validation bench for windows with a provable end.
+
+        config ESP32_CSI_TOOL_FAULT_INJECT
+            bool "Enable deterministic fault injection (TEST BUILDS ONLY)"
+            default n
+            help
+                Gates the FI_* counters below. Never enable in a capture
+                whose data is meant for analysis: the injected events are
+                synthetic and exist only to validate that the accounting
+                classifies each failure mode correctly.
+
+        config ESP32_CSI_TOOL_FI_REJECT_EVERY_N
+            int "Reject every Nth callback before enqueue (0 = off)"
+            depends on ESP32_CSI_TOOL_FAULT_INJECT
+            default 0
+
+        config ESP32_CSI_TOOL_FI_QUEUE_DROP_EVERY_N
+            int "Count every Nth frame as a queue drop without enqueue (0 = off)"
+            depends on ESP32_CSI_TOOL_FAULT_INJECT
+            default 0
+
+        config ESP32_CSI_TOOL_FI_LAYOUT_DROP_EVERY_N
+            int "Classify every Nth dequeued frame as a layout drop (0 = off)"
+            depends on ESP32_CSI_TOOL_FAULT_INJECT
+            default 0
+
+        config ESP32_CSI_TOOL_FI_SINK_FAIL_EVERY_N
+            int "Drop every Nth formatted row before the sink, counted (0 = off)"
+            depends on ESP32_CSI_TOOL_FAULT_INJECT
+            default 0
+
+        config ESP32_CSI_TOOL_FI_DUP_EVERY_N
+            int "Enqueue every Nth frame twice, uncounted (0 = off)"
+            depends on ESP32_CSI_TOOL_FAULT_INJECT
+            default 0
+            help
+                The duplicate is deliberately not counted anywhere: it is
+                the anomaly the sequence-level audit must catch despite the
+                count cancellation of one missing plus one duplicated row.
+
+    endmenu
+
+endmenu

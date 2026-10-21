@@ -1,0 +1,49 @@
+#
+# VeriCSI-ESP32 - ESP32-S2 (Xtensa LX7 single-core) overrides
+#
+# Verified board: LOLIN ESP32-S2 mini.
+# The S2 has USB-OTG (full-speed USB 1.1) but no native USB-Serial-JTAG, so
+# the default sink is TinyUSB CDC ACM. UART remains enabled in parallel
+# so that boot messages and the SETTIME flow over the original USB-UART
+# bridge keep working.
+#
+
+CONFIG_IDF_TARGET="esp32s2"
+
+CONFIG_FREERTOS_UNICORE=y
+
+#
+# Console: UART0 at 921600 baud (boot console + SETTIME path). The high-rate
+# CSI stream goes through TinyUSB CDC below, but UART stays active for
+# Hernandez 2020 SETTIME compatibility. v6.0.1 needs
+# ESP_CONSOLE_UART_CUSTOM=y to unlock user-set baud.
+#
+CONFIG_ESP_CONSOLE_UART_CUSTOM=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=921600
+
+#
+# Sinks
+#
+# Both UART (boot console + SETTIME) and TinyUSB CDC (high-rate CSI stream)
+# are enabled. csi_component.h's consumer task fans every CSV row out to all
+# enabled sinks, so users with only one cable plugged in still see data.
+#
+CONFIG_SEND_CSI_TO_SERIAL=y
+CONFIG_SEND_CSI_TO_SD=n
+CONFIG_ESP32_CSI_TOOL_SINK_USB_CDC=y
+
+#
+# TinyUSB sub-config
+#
+# CDC ACM is the only USB class we use. Disable other classes to keep the
+# USB descriptor minimal and reduce firmware size.
+#
+CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_HID_ENABLED=n
+CONFIG_TINYUSB_MIDI_ENABLED=n
+CONFIG_TINYUSB_MSC_ENABLED=n
+CONFIG_TINYUSB_NET_MODE_NONE=y
+CONFIG_TINYUSB_VENDOR_ENABLED=n
+CONFIG_TINYUSB_DESC_USE_DEFAULT_CONFIG=y
+
+CONFIG_SHOULD_COLLECT_CSI=y
